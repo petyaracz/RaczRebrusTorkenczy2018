@@ -1,0 +1,751 @@
+\documentclass[12pt]{article}
+
+\usepackage[utf8]{inputenc}
+
+\usepackage{amsmath}
+\usepackage{amscd}
+\usepackage[tableposition=top]{caption}
+\usepackage{ifthen}
+
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{multicol,multirow}
+\usepackage{natbib,color,verbatim,booktabs,enumitem}
+\usepackage{tipa}
+
+\title{Attractors of variation in Hungarian inflectional morphology} 
+\author{P\'eter R\'acz$^1$, P\'eter Rebrus$^2$, Mikl\'os T\"orkenczy$^{2,3}$ \\ \footnotesize $^1$Department of Anthropology and Archeology, University of Bristol \\ \footnotesize $^2$Institute of Linguistics, Hungarian Academy of Sciences \\ \footnotesize $^3$E\"otv\"os Lor\'and Science University}
+\date{}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+\setkeys{Gin}{width=0.95\textwidth}
+
+\maketitle
+
+\begin{abstract}
+\noindent We use algorithmic learning and statistical methods over a form frequency list (compiled from the Hungarian web corpus) to investigate variation in Hungarian verbal inflection. Our aims are two-fold: (i) to give an adequate description of this variation, which has not been described in detail in the literature and (ii) to explore the range and depth of lexical attractors that potentially shape this variation. These attractors range from closely related ones, such as the shape of the word form or the behaviour of the verb's paradigm, to broad ones, such as the behaviour of similar verbs or the phonotactics of related verb forms. We find that verbal variation is predominantly determined by similarity to related verb forms rather than by word shape or by word frequency. What is more, the effect of similarity is better approximated using inflected forms as opposed to base forms as points of comparison. This, in turn, supports a rich memory model of morphology and the mental lexicon.\\
+
+\vspace{0.2cm}
+\noindent {\bf keywords:} morphophonology, language variation and change, similarity, frequency, Hungarian
+\end{abstract}
+
+<<beazadatot, echo=F>>=
+try(setwd('~/Work/Bristol/RaczRebrusTorkenczy2018/'))
+library(stringr)
+library(reshape2)
+library(ggplot2)
+library(lme4)
+library(effects)
+library(xtable)
+library(dplyr)
+library(FactoMineR)
+library(knitr)
+
+knitr::opts_chunk$set(dev='cairo_pdf')
+
+d <- read.csv('formatted_filtered_hits_pairs_jan.txt')
+nstem <- d %>% select(ik) %>% unique %>% nrow
+nform <- d %>% nrow
+truenform <- d %>% filter(!(v_freq==0 & nv_freq==0)) %>% nrow
+nvar <- d %>% mutate(suf_freq = v_freq + nv_freq) %>% summarise(sum(suf_freq)) %>% pull
+@
+
+\noindent Morphophonological variation is generally driven by stylistic or social factors (see e.g.\ \citealt{tagliamonte2012models}). Beyond these factors, such variation also uncovers parts of linguistic structure where exponents are underdetermined – where, in a way, multiple solutions are available for the same problem. In these cases one may encounter otherwise unseen attractor biases including segmental co-occurrence preferences (see \citealt{frisch2004similarity}) or the pull of related forms showing similar behaviour (see \citealt{krott2001analogy}).  (In a dynamical system, an {\em attractor} is a part of the state space towards which the system tends to evolve, see e.g.\ \citealt{milnor1985concept}.)  Variation effectively reveals wider aspects of linguistic structure.
+
+English stress placement offers a simple example of such attractor biases affecting variation. Primary stress on the noun stem is preserved as secondary stress when the stem is combined with a stressed suffix, such as `-ation' ({\em accr\'edit -- accr\`edit\'ation}; {\em im\'agine -- im\`agin\'ation}). If this secondary stress would surface adjacent to the suffixed form's primary stress, it typically moves ({\em cons\'erve -- c\`onserv\'ation}; {\em conf\'irm -- c\`onfirm\'ation}). 
+
+For certain stems, where these patterns clash, secondary stress placement is variable. Secondary stress either shifts from its original position, or occurs adjacent to primary stress ({\em cond\'ense -- c\`ondens\'ation / cond\`ens\'ation}). (Examples are from Pater's (\citeyear{pater2000non}) analysis of English stress placement.) While the larger picture is more complex, here we can say that words like `condensation' reveal competing biases in the language.
+
+In this paper we explore variation in a class of Hungarian verbs. We identify an underdetermined pattern of suffixation, and look at the various attractors that come into play in variant selection. The focus is on the lexical aspects of variation, using the underdetermined pattern to shed light on the structure of the mental lexicon. We look at (i) specific lexical attractors that follow from a given verb's paradigm, (ii) broader attractors that follow from generalisations across verbal paradigms, and (iii) even broader ones that hold over the entire lexicon. 
+
+Instances of variation in morphophonology provide useful insight into the organisation of word-formation patterns in language \citep{bybee1985morphology} and the structure of the mental lexicon \citep{hay2005shifting,pierrehumbert2012dynamic}. Our aims are (i) to give an adequate description of this Hungarian verbal pattern, one that can be generalised to similar verbal inflection patterns, and (ii) to draw inferences on the overall structure of the mental lexicon.
+
+We use a webcorpus to approximate the ambient language, and an instance-based learning algorithm and hierarchical generalised linear regression to model lexical attractors. The resulting model does not provide an exhaustive description of morphophonological variation in Hungarian. It does, however, offer a heuristic tool to study lexical structure: it points us to attractors that are relevant to variation and provides a measure of their relative importance.
+
+\section{Lexical representation and variation in the community \label{background}}
+
+
+
+Variation in the speech community is the sum of variable individual behaviours. In turn, individual variation is both influenced by patterns in the ambient language and the structure of the individual's mental lexicon. That is, variable behaviour, community-level patterns, and lexical organisation are all connected to each other.  
+
+
+
+Psycholinguistic research shows that individual linguistic behaviour is shaped by lexical organisation. Word forms are primed by related forms \citep{grainger1991masked} and the strength of the prime reflects structural relatedness (\citealt{gonnerman2007graded}; this effect is less clear for affixal primes, see \citealt{dominguez2010contribution,dunabeitia2011morpho}). Word length and lexical neighbours have also been shown to affect word activation (see \citealt{grainger1990word,carreiras2006effect}).
+
+Individual behaviour is also influenced by patterns in the speech community. This can be seen in studies of sociolinguistic variation \citep{labov2011principles}. For example, individual style shifting follows the established patterns of formal and informal language use in the community. Language use in the community determines the frequency and predictability of words in the ambient language (the linguistic patterns that the listener encounters day-to-day), which are reflected in the individual's linguistic behaviour \citep{rumelhart1985learning,bresnan2007predicting}. 
+
+Conversely, lexical organisation affects patterns in the speech community. Types of sound change are influenced by similarity between words, analogy shapes morphological change, and gangs of similar words are more prone to resist change in general \citep{paul1995prinzipien,wang1969competing,bybee1995regular,cuskley2014internal}.
+
+What follows is that lexical organisation and community-level variation are inter-related. For a given linguistic pattern, there is a trade-off between individual biases and community-level conventions (see e.g.\ \citealt{christiansen2003language}; for a trade-off based treatment of word length and word use, see \citealt{kirby2015compression}).
+
+Models of language recognise this relationship by assuming that certain patterns of community-level use (such as word predictability) are represented in the individual's mental lexicon. There is an extensive literature on this topic that we cannot cover in detail (but see e.g.\ \citealt{skousen1989analogical,bybee1995regular,cole1997words,baayen2007storage} for some discussion). In this paper, we focus on the depth and resolution of these representations. 
+
+Morphophonological processes are, to some degree, reflections of this lexical organisation \citep{hay2005shifting,racz2015morphological}. They are probably not best modelled using a purely lexical approach, but it is clear that they rely on lexical organisation to a large degree \citep{albright2009modeling,hayes2008maximum,pierrehumbert2016phonological}.  Observed morphological patterns cannot be based on exhaustive lists of form-meaning pairs, nor can they be described purely in terms of abstract rules. 
+
+This claim raises some interesting questions about the relationship between patterns in the language community and the individual's lexicon. Which aspects of community-level variation is represented in the speaker's lexicon? What degree of detail is available to the speaker as they select a variable morphophonological exponent? In short, what are the relevant lexical attractors of variation?
+
+One way to approach these questions is to take an example of community-level morphophonological variation and test a range of lexical attractors as potential predictors of this variation. If a lexical attractor is useful in explaining how the pattern behaves at the community-level, then it is likely available for individuals who are ultimately responsible for community-level variation. In a way, individual behaviour mirrors community behaviour. It has been demonstrated that a wide array of lexical attractors are active in morphophonology (see e.g.\ \citealt{dkabrowska2008effects,myers2009lexical}, for an overview, see \citealt{racz2016cambridge}). As a consequence, morphophonology provides an ideal testing ground for the relationship of community-level and individual-lexical variation.
+
+In what follows, we address this relationship in two steps. We use an operationalisation which relies on a corpus to model community-level use and lexical attractors, and we investigate relationships between them through a range of exploratory methods that include category learning and numeric prediction. This approach does not favour hypothesis testing, but works very well in generating hypotheses about the structure of the mental lexicon.
+
+Our emphasis is on the relative strength of variants in a given instance of variation, rather than the ontologically much more diffuse question of why certain forms are stable while others show variation in the first place.
+
+\section{The problem space}
+
+\subsection{The CVC/CC class of Hungarian verbs \label{osztalyokszekcio}}
+
+In what follows, we use a concatenative terminology to describe the problem space: {\em suffixation in Hungarian verbal inflection}. This terminology is adequate to give a simple description of Hungarian verbal suffixation. (It makes no commitments over either the individual's model of Hungarian verbal inflection or the description of Hungarian inflection in its entirety.) We loosely follow the Leipzig Glossing Rules \citep{bickel2008leipzig} in our examples (verb indefiniteness is not marked). 
+
+We can describe Hungarian verbal inflection as the concatenation of suffixes to stems, where the mechanisms of concatenation depend on the shape of the stem and the category of the suffix. Suffixes can be {\em analytic}, {\em quasi-analytic}, or {\em synthetic}. {\em Analytic} suffixes (C-) are always consonant-initial, regardless of the final segment(s) of the stem. However, some suffixes show C/V alternation: {\em synthetic} suffixes (V-) are vowel-initial after consonant-final stems, whereas {\em quasi-analytic} suffixes (C/V-) are consonant initial when the stem ends in a single consonant but vowel-initial after cluster-final stems \citep{kiefer2000strukturalis}. For the purposes of this description, it suffices to say that {\em quasi-analytic} suffixes are variably C- or V-initial (C/V-).
+
+inflection then depends on (i) whether the stem ends in a consonant cluster (CVC/CC) and (ii) whether the specific suffix is analytic (C-), synthetic (V-), or quasi-analytic (C/V-).
+
+On one hand, if a quasi-analytic suffix is attached to a CC-final stem, a {\em linking vowel} appears between the stem and the suffix (e.g.\ \textipa{[hord]} + \textipa{[n6]} = \textipa{[hord-6n6]}, `carry-\textsc{3sg.cond}'). A CVC-final stem and a quasi-analytic suffix can combine without a linking vowel (e.g.\ \textipa{[a:pol]} + \textipa{[n6]} = \textipa{[a:pol-n6]}, `nurse-\textsc{3sg.cond}').
+
+On the other hand, for a {\em class of stems}, the vowel of the stem-final CVC sequence does not appear when the stem is followed by a V-initial suffix (e.g.\ \textipa{[s\o{}p\o{}r]} + \textipa{[\o{}k]} = \textipa{[s\o{}pr-\o{}k]}, `sweep-\textsc{1sg.ind}'). The stem vowel is, at least in some stems, lexically specified and the linking vowel is determined by vowel harmony. This means that the behaviour of concatenated forms is partly phonological and partly lexical. In sum, stem and suffix combinations vary according to the presence of a linking vowel and the variability of the final stem vowel. Our focus is on the variable stem vowel (see below).
+
+Table \ref{osztalyok} provides a schematic outline of these classes using a representative set of verbal suffixes (for an overview, see \citealt{lukacs2010defective}).  The table shows a set of representative verbs (rows) across a set of representative suffixes (columns); suffix type (no suffix / V-initial / C-initial / C/V-initial) is indicated in the header. 
+
+From top to bottom: (1) The {\em stable} class always has a stem vowel irrespective of the suffix. (2) The {\em weak} class loses the stem vowel when followed by a V-initial suffix (as in the {\sc 1sg.ind}) but retains it when followed by a C-initial suffix (as in the {\sc 3sg.imp} or the {\sc 3sg.cond}). (3) The {\em variable} class behaves similarly to (2) in that the stem loses the vowel when followed by a V-initial suffix. However, for C/V- suffixes (where both variants of the suffix are available in this stem class), these stems allow for two repair strategies: the stem vowel is maintained {\em or} a linking vowel is added between the stem and the suffix. This variation can be seen in the {\sc 3sg.cond}. (4) The {\em no vowel} class contains stems that end in a consonant cluster that is never broken up by a vowel, irrespective of the suffix. These stems either use no linking vowels (with analytic suffixes, as e.g. {\sc 3sg.imp}) or opt for a linking vowel between stem and suffix (as e.g.\ in {\sc 3sg.cond}). Finally, (5) {\em defective} stems tend to end in consonant clusters of increasing sonority, which cannot be broken up by a vowel (unlike in classes 2 or 3). When they combine with analytic suffixes, which do not allow for a linking vowel between stem and suffix (such as the {\sc 3sg.imp}), the derived form cannot be repaired in any way, resulting in a paradigmatic gap.
+
+Verbs in classes (3,5) all take the suffix `-ik' in \textsc{3sg.ind}. This suffix is only present for a subclass of Hungarian verb forms. The `-ik' suffix favours a CC variant of the form.
+
+\begin{table}[htp]
+\begin{center}
+\footnotesize
+\begin{tabular}{llllll}
+\toprule
+{\em class} & {\sc 3sg.ind} (no suf.) & {\sc 1sg.ind} (V-suf.) & {\sc 3sg.imp} (C-suf.) & {\sc 3sg.cond} (C/V-suf.) & {\em gloss} \\
+\midrule
+\footnotesize
+ 1 stable & \textipa{ a:pol } & \textipa{ a:polok } & \textipa{ a:poljon } & \textipa{ a:poln6 } & nurse \\
+ 2 weak & \textipa{ S\o{}p\o{}r } & \textipa{ S\o{}pr\o{}k } & \textipa{ S\o{}p\o{}rj\o{}n } & \textipa{ S\o{}p\o{}rnE } & sweep \\
+ 3 variable & \textipa{ fyrdik } & \textipa{ fyrd\o{}k } & \textipa{ fyr\o{}dj\o{}n } & \textipa{ fyr\o{}dnE / fyrdEnE } & bathe \\
+ 4 no vowel & \textipa{ hord } & \textipa{ hordok } & \textipa{ hordjon } & \textipa{ hord6n6 } & carry \\ 
+ 5 defective & \textipa{ Siklik } & \textipa{ Siklok } & \textipa{ *Sikljon } & \textipa{ Sikl6n6 } & slide\\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{Hungarian verb classes}
+\label{osztalyok}
+\end{table}
+
+This paper focusses on Class (3), the class of CVC/CC verbs. These verbs show variation between two repair strategies if they are combined with C/V-initial suffixes. These forms either follow classes (1-2) and behave like {\em CVC-final} verbs, or follow classes (4-5) and behave like {\em CC-final} verbs. As suggested by the example in Table \ref{osztalyok} (\textipa{ fyr\o{}dnE / fyrdEnE }), a single stem can show variation, even with the same suffix. The aim of this paper is to account for the process that generates the observed CVC/CC variation in Class (3) in the speech community.
+
+It is important to note that the {\sc 3sg.ind} form of CVC/CC verbs shows very little variation and is almost always of the CC form (followed by the V-initial {\sc 3sg.ind} suffix `-ik', obligatory for this class though not for all verbs). Only a few counterexamples exist in the corpus, such as \textipa{[t6jte:kzik]} / \textipa{[t6jte:kozik]} `throw a tantrum{\sc -3sg.ind}' or \textipa{[doha:\textltailn{}zik]}/ \textipa{[doha:\textltailn{}ozik]} `smoke{\sc -3sg.ind}'. 
+
+\subsection{Identifying attractors of the CVC/CC class \label{haromsag}}
+
+In Section \ref{background}, we set out to test the scope of active lexical attractors using variation in the speech community. Here, we focus on variation in a corpus of Hungarian, reflecting community-level use to see which patterns of variation in the corpus are likely to be represented by the individual. Our focus is restricted to forms that show CVC/CC variation; the question of why certain forms remain stable has been reserved for future work. The restricted approach does, to some extent, provide an answer to this broader question.
+
+We propose four sets of lexical attractors of CVC/CC verb variation: {\em phonotactic}, {\em across-paradigm}, {\em within-paradigm}, and {\em form-specific}.
+
+
+\paragraph{Phonotactic attractors} The widest attractors are generalisations that hold across all words in the Hungarian lexicon -- phonotactic patterns. CVC/CC variation interacts with {\em phonotactics}. It effectively avoids CCC clusters, which are typically (though not uniformly) broken up at morphological boundaries (as well as most monomorphemic forms) in the Hungarian lexicon. This avoidance of marked clusters suggests a link with the phonotactics; that is, variation might respond to stochastic restrictions on consonant clusters across the entire lexicon. We can test for this by seeing whether phonotactic aspects of these clusters affect variation in a robust way.
+
+One phonotactic aspect of consonant clusters is their {\em sonority}. It is, in the most neutral terms, the set of cross-linguistic preferences of consonants when they occur adjacent to each other  -- in various constituent parts of the syllable, as well as heterosyllabically \citep{clements1990role}. Falling sonority is more typical of clusters in syllable-final positions, while rising sonority is more likely to indicate a syllable-initial or a heterosyllabic position.
+
+{\em We expect that the sonority slope of the consonant cluster will influence CVC/CC variation} \citep{siptar2000phonology}. That is, CC sequences with a more falling slope will be less likely to be broken up, because these sequences are more likely to occur stem-finally across the Hungarian lexicon.
+
+Though the theoretical and empirical validity of sonority as a concept is often criticised (see \citealt{harris2006phonology}), it still provides a useful approximation of broad patterns that hold across the lexicon.
+
+
+A second aspect of consonant clusters is {\em homorganicity}. Most members of the stable CC class in Hungarian have homorganic clusters (e.g.\ \textipa{[kEzd]} `start{\sc -3sg.ind}', \textipa{[t6rt]} `hold{\sc -3sg.ind}', \textipa{[a:ld]} `bless{\sc -3sg.ind}'). This trend can reflect a more general tendency that homorganic clusters avoid breaking up. (This pattern would be further complicated by the behaviour of geminates, but no geminates occur in the cluster in CVC/CC verbs.)
+
+\paragraph{Across-paradigm attractors} Generalisations across the general class of verbs constitute a narrower set of attractors. We can think of these as generalisations over {\em across-paradigm} similarity within this general class. The variable behaviour of CVC/CC verbs maps onto the stable behaviour of two sets of verbs in Hungarian. One set consistently shows CVC behaviour in the relevant exponents, and the other shows consistent CC behaviour. (These are classes 1-2 and 4-5 in Table \ref{osztalyok}.) A given CVC/CC verb will be similar to both CVC and CC verbs.
+
+ This {\em formal} (as opposed to semantic)  similarity across verb classes constitutes an attractor of variation (see \citealt{bybee1982rules,dawdy2014learnability}), which leads us to expect specific CVC/CC verbs to move towards the verb classes to which they are more similar.
+
+{\em We expect that CVC/CC verbs that are overall more similar to CVC verbs will show more CVC behaviour, while those that are more similar to CC verbs will show more CC behaviour. }
+
+Assuming an effect of across-paradigm similarity, our account needs to further specify the basis of across-verb similarity in the respective verbal paradigms. Similarity between verb classes can be based on basic forms in the paradigm, as in \cite{albright2003rules} or \cite{hahn2000german}. Alternatively, similarity can be also based on {\em inflected forms}. The use of inflected forms commits us to a rich memory model of the mental lexicon, in which inflected forms are also available as bases of similarity-driven processes \citep{johnson2006resonance,racz2015morphological}.
+
+\paragraph{Within-paradigm attractors} We can consider this trade-off between model complexity and available information specifically {\em within the verb's paradigm}. On the one hand, the most frequent form in the verb's paradigm is usually the {\sc 3sg.ind}. It can be seen as the prominent basic form of the paradigm (see \citealt{baayen1997singulars,blevins2001paradigmatic,booij1999lexical}). Variable CVC/CC verbs form the {\sc 3sg.ind} with a CC stem and the V-initial suffix `-ik'. CC variants of CVC/CC forms will be more similar to this basic form. On the other hand, most variable CVC/CC forms are, in fact, CVC forms, because of an overall skew of C/V-initial suffixes to be C-initial. As a consequence, CVC variants of CVC/CC forms will be more similar to these suffixed forms. 
+
+
+
+{\em We expect that the token frequency of the {\sc 3sg.ind} and the range of variation across V-initial suffixes will affect CVC/CC variation} -- a more frequent base form results in more CC forms, a wider range of suffix variation results in more CVC forms.
+
+
+
+\paragraph{Word-specific attractors} Finally, we define certain attractors as {\em specific to the verb form} itself. These should have an effect on the extent to which the CVC/CC form preserves the stem. {\em Compound} verbs are verbs that have a lexicalised preverbal particle (such as \textipa{[fEl-h6ngzik]} `become audible, lit.\ up-sound'). {\em We expect these forms to have more CVC versus CC forms.} 
+
+Verbs that have a {\em free stem} should also have stronger stem identity compared to verbs that have no recognisable free stems. For example, \textipa{[a:r6m-lik]} `flow-{\sc 3sg.ind}' has the nominal stem \textipa{[a:r6m]} `flow'. The noun form can be seen in the verbal stem. In contrast, \textipa{[boml-ik]} `decay-{\sc 3sg.ind}' has no similar pair: the stem (\textipa{*[boml]}) is not attested in itself. What follows is that {\em we expect that verbs with free stems will have more CVC versus CC forms.} 
+
+Most CVC/CC verbs are intransitive. Therefore, {\em we expect that transitive verbs will also have more CVC forms.} Since CC forms make the stem harder to identify if it is shorter (L\'aszl\'o K\'alm\'an, p.c.\, see also \citealt{racz2012variation}), {we also expect a correlation between the length of the stem and CVC/CC variation.} As a result, we expect a higher ratio of CC forms for these verbs. 
+
+Most of our attractors, such as token frequency, word length, or the structure of the lexical neighbourhood, are common in studies of lexical variation. Our aim is to offer a taxonomy of lexical attractors based on attractor specificity, as we believe that the extent to which these various factors contribute to CVC/CC variation in Hungarian morphology is indiciative of how inflected forms are processed, stored, and organised in Hungarian. The mechanics of Hungarian inflection are, in turn, relevant for broader theoretical approaches to inflectional morphology and its relationship to the mental lexicon.
+
+\section{Analysis}
+
+\subsection{Data source}
+
+We approximate variation in the speech community using a frequency dictionary derived from the Hungarian Webcorpus \citep{tron2006morphdb}. The dictionary is based on a version of the corpus that is morphologically analyzed \citep{tron2005hunmorph} and morphologically disambiguated on the inflection level \citep{halacsy2007hunpos}. Using an online corpus comes with limitations as the data do not closely reflect spoken language \citep{racz2016cambridge}. At the same time, the corpus is very large and covers a range of written registers, both formal and informal (1.48 billion words unfiltered / 589 million words fully filtered by a morphological parser).
+
+Our query of varying CVC/CC verbs is restricted in two ways.
+
+\paragraph{Suffixes} We selected five C/V-initial suffixes that are frequent enough to carry substantial CVC/CC verb variation. This allows us to balance the resulting dataset across a limited number of suffixes that do not vary widely in frequency of use across verb stems, rendering multi-level modelling feasible. The five suffixes are listed in Table \ref{ragok} below.
+
+\begin{table}[htp]
+\begin{center}
+\footnotesize
+\begin{tabular}{lllll}
+\toprule
+function & C-variant & V-variant & CVC example & CC example \\
+\midrule
+{\sc 3sg.cond} & -nA & -AnA & \textipa{ a:r6moln6} & \textipa{ a:r6ml6n6}\\
+{\sc 3pl.ind} & -nAk & -AnAk & \textipa{ a:r6moln6k} & \textipa{ a:r6ml6n6k}\\
+{\sc inf} & ni & -Ani & \textipa{ a:r6molni} & \textipa{ a:r6ml6ni}\\
+{\sc 3pl.past.ind} & -tAk & -OttAk & \textipa{a:r6molt6k} & \textipa{ a:r6mlott6k}\\
+{\sc 2sg.ind} & -tOk & -OtOk & \textipa{a:r6moltok} & \textipa{ a:r6mlotok}\\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{The five C/V-initial suffixes with \textipa{[a:r6mlik]} `flow-{\sc 3sg.ind}'}
+\label{ragok}
+\end{table}
+
+In the annotations, `A' represents front-harmony (\textipa{[6]} $\sim{}$ \textipa{[E]}), `O' represents rounding harmony (\textipa{[o]} $\sim{}$ \textipa{[\o{}]} $\sim{}$ \textipa{[E]}).
+
+\paragraph{Verbs} The CVC/CC class is a fuzzy set. We chose 111 that have a variable final vowel in the stem (according to our speaker intuitions\footnote{All three authors are native speakers of Educated Colloquial Hungarian, a language variant named by the third author.}). The envelope of true variation is considerably narrower than these verbs, so that it is unlikely that we missed large parts of the varying vocabulary. We excluded verbs that are defective (e.g.\ \textipa{[h6\textltailn{}6tlik]} `decline-{\sc 3sg.ind} / \textipa{*[h6\textltailn{}6toljon]} `decline-{\sc 3sg.imp}'), stems that show a semantic split between the CVC and the CC form (e.g.\ \textipa{[fEnEkElhEt]} `ground/spank-{\sc 3sg.mod}' --  see \textipa{[fEnEklik]} `ground' / \textipa{[fEnEkEl]} `spank' ), and four stems that were identified as nouns by the parser (e.g.\ \textipa{[Elh6ngzott6k]} `what has been said-{\sc 3pl.ind} / {\sc 3pl.adv}'). 
+
+As we note in Section 1, we aim to focus on forms that do show variation. Therefore, we introduced one numeric threshold: each verb had to have at least one CVC form and one CC form with any suffix in Table \ref{ragok}. Since missing forms are likely due to data scarcity (these are low token frequency forms), we opted for a lexical definition of defectiveness and a low frequency threshold for inclusion in the dataset.
+
+\paragraph{Data size} Our semantic and frequency restrictions reduce the sample size to \Sexpr{nvar} instances of \Sexpr{truenform} CVC/CC variants of \Sexpr{nstem} verbs. The number of all possible CVC/CC pairs of the \Sexpr{nstem} verbs with five suffixes is $39*6=195$. 
+
+In all type counts below, we include the CVC and CC variants of all suffixed forms of all verbs -- \Sexpr{nform} variant pairs -- and set the token frequency of unattested variants to 0. (See in Table \ref{dohanyozikpelda}.)
+
+\paragraph{Calculating odds ratios for CVC/CC verbs}
+
+<<freqcor, echo=F>>=
+freqs <- d %>% select(ik,log_form_freq,log_ikfreq) %>% unique
+cor_freqs <- with(freqs, cor(log_form_freq,log_ikfreq)) %>% round(2)
+@
+
+Since the Webcorpus parser tends to regard CVC and CC forms as separate lemmata, we calculate lemma frequency for the verbs by hand. Lemma frequency is strongly correlated with the frequency of the {\sc 3sg.ind} ($r = \Sexpr{cor_freqs}$).
+
+Following \cite{janda2010capturing}, we calculate the odds of the CVC variant over the CC variant for each suffixed form, by adding 1 to both frequencies and then calculating the odds in order to avoid dividing by zero. We use logged odds in the analysis. Table \ref{dohanyozikpelda} shows the variants of \textipa{[a:r6mlik]} `flow-{\sc 3sg.ind}' in the sample.
+
+\begin{table}[ht]
+\centering
+% \footnotesize
+\begin{tabular}{llllrrrr}
+  \toprule
+  stem & suffix & CVC form & CC form & CVC freq & CC freq & odds & log\_odds \\ 
+  \midrule
+\textipa{a:r6mol} & -nAk & \textipa{ a:r6moln6k} & \textipa{ a:r6ml6n6k} &  69 & 593 & 0.12 & -2.14 \\ 
+\textipa{a:r6mol} & -tAk & \textipa{ a:r6molt6k} & \textipa{ a:r6mlott6k} &  19 & 172 & 0.12 & -2.16 \\ 
+\textipa{a:r6mol} & -nA & \textipa{ a:r6moln6} & \textipa{ a:r6ml6n6} &  14 &  42 & 0.35 & -1.05 \\ 
+\textipa{a:r6mol} & -tOk & \textipa{ a:r6moltok} & \textipa{ a:r6mlotok} &   0 &   0 & 1.00 & 0.00 \\ 
+\textipa{a:r6mol} & -ni & \textipa{ a:r6molni} & \textipa{ a:r6ml6ni} &  75 & 161 & 0.47 & -0.76 \\ 
+   \bottomrule
+\end{tabular}
+\caption{Attested variant pairs of \textipa{[a:r6mlik]} in the sample} 
+\label{dohanyozikpelda}
+\end{table}
+
+\subsection{Operationalising attractors of the CVC/CC class \label{haromsag2}}
+
+We operationalised the attractors discussed in Section \ref{haromsag} as the following predictors:
+
+\begin{enumerate}
+\item ~ phonotactic: sonority, homorganicity
+\item ~ across-paradigm: {\sc 3pl.ind} form's similarity to stable CVC verbs and to stable CC verbs
+\item ~ within-paradigm: frequency of \textsc{3sg.ind}, lemma frequency of verb, type frequency of attested C/V-initial suffixed forms
+\item ~ word-specific: is the form a compound?, is a free base attested?, is the verb intransitive?, length of base in syllables
+\end{enumerate}
+
+\paragraph{Phonotactic predictors}
+
+For each verb, we tag the two consonants in the final CVC/CC cluster as hetero- or homorganic and calculate a sonority slope based on their relative sonority. The sonority of a given segment ranged from 1 (high sonority: the glide [j]) to 8 (low sonority: voiceless stops). The sonority of the pair is the sonority of the first segment subtracted from the sonority of the second segment. This means that a high value describes a falling slope of sonority (such as [jk]), while a low value describes a rising slope of sonority (such as [tr]). Clusters with a high value tend to prefer syllable codas, clusters with a low value tend to prefer syllable onsets.
+
+\paragraph{Across-paradigm predictors}
+
+Our expectation is that variable verbs behave like stable verbs to which they are more similar  in form . The relevant classes are covered in Section \ref{osztalyokszekcio}. One class of verbs is stable CVC and takes C-initial variants of C/V-initial suffixes. Another class is stable CC and takes V-initial variants of C/V-initial suffixes. If a CVC/CC verb is more similar to stable CVC verbs, it will behave more like a stable CVC verb, whereas, if it is more similar to stable CC verbs, it will behave more like a stable CC verb.
+
+The similarity argument seems circular if we focus only on the morpheme boundary between stem and suffix. In this case, e.g.\ a CC verb will be a CC verb by virtue of not breaking up the cluster in suffixed forms. 
+
+However, similarity holds across the entire form -- CVC/CC {\em stems} have quantifiable similarity to stable CVC versus CC stems. At the same time, we want a similarity-based account to be based on real forms and not posit abstract stems or base forms as points of comparison. Extant forms of CVC/CC verbs, on the other hand, are either CVC or CC.
+
+One way around this is to pick a suffixed form that occurs both in the CVC and CC form and that is frequent enough so that a similarity-based model will cover a large part of the potential parameter space.
+
+We select the {\sc 3pl.ind}, a frequent suffixed form that shows CVC/CC variation, and compare the {\sc 3pl.ind} of variable CVC/CC forms to stable CVC and CC forms. We do so with both the CVC and the CC variants, separately. This is schematised in Table \ref{analogy_table}.
+
+\begin{table}
+\centering
+\begin{tabular}{llll}
+\toprule
+ & target & \multicolumn{2}{c}{source} \\
+type & CVC/CC verbs & stable CVC & stable CC \\
+\midrule
+CVC & \textipa{a:r6moln6k} & \textipa{a:poln6k} &  \\
+CC & \textipa{a:r6ml6n6k}  &  & \textipa{hord6n6k} \\
+\bottomrule
+\end{tabular}
+\caption{Sources and targets in across-paradigm analogy}
+\label{analogy_table}
+\end{table}
+
+We can fit a learning algorithm that is trained on two source sets: stable CVC and stable CC verbs. It
+takes CVC/CC verbs as test forms and assigns category membership in either the stable CVC or the stable CC class for each CVC/CC verb. The algorithm will also assign a weight to its judgement. The result is a distance measure that quantifies where a given CVC/CC form is between stable CVC and stable CC verbs, in terms of similarity of form.
+
+We use the Generalised Context Model (GCM) to determine similarity between the verb stems in the sample and stable CVC and CC verbs in the language. The GCM takes a target form and compares it to individual training forms in two categories (in our case). It calculates the similarity between the target and the individual training forms based on the edit distance: 
+
+\vspace{1cm}
+$\eta_{ij} = \exp {(- d_{ij} /s)^p}$
+\vspace{1cm}
+
+In the equation above, $\eta_{ij}$ represents the similarity between form $i$ and form $j$, while  $d_{ij}$ is the edit distance between the two forms. $s$ and $p$ are free parameters, here set to $s = 0.3$ and $p = 1$. The parameter {\em s} determines how quickly the similarity decreases as the distance between the forms increases. When {\em p} is set to 1, as here, the similarity function is an exponential, rather than a Gaussian function of the edit distance. 
+
+The GCM calculates a summed distance of the target form to the category. The overall similarity $S_{iC_J}$ of a test form $i$ to a set $C_J$ is calculated by summing the similarity $\eta_{ij}$ of each member $j$ of class $C_J$ to the test form $i$, and dividing by the summed similarity $\eta_{ij}$ of each member $k$ of class $C_K$ (the class of all stored forms) to the test form $i$. If all stored forms are grouped in two sets, similarity to one group is complementary with similarity to the other group.  Therefore, if a verb's similarity to stable CVC verbs is 0.4 then its similarity to stable CC verbs is 0.6, as the target verbs are either stable CVC or stable CC.   This calculation is summarized in the following equation.
+
+\vspace{1cm}
+$S_{iC_J} = \frac{{\sum_{j \in C_J } \eta_{ij} } }{{\sum_{k\in C_K } \eta_{ik} }}$
+\vspace{1cm}
+
+We adapted the GCM from the framework of \cite{nosofsky1990relations} to compare word forms in the R language \citep{R}. This algorithm has been widely and successfully used in linguistic categorisation tasks \citep{krott2001analogy, albright2003rules, dawdy2014learnability}.
+
+For this specific categorisation problem, we create a training class of stable CVC and CC verbs using a list of {\sc 3pl.ind} forms in the Hungarian Webcorpus with a token frequency of 10 or higher. We exclude the 111 potential CVC/CC verbs involved in creating our target sample. We exclude a small set of suppletive forms, as well as  forms that can be seen both as complex forms or separate lexical entries (such as \textipa{[bE-fy:t-EnEk]} `heat-{\sc 3pl.ind.pfv}', cf.\ \textipa{[fy:t/EnEk]}) `heat-{\sc 3pl.ind}'),  and forms that end in the irregular derivational suffix \textipa{[i:t]} (such as \textipa{[l6pi:t-6n6k]} `squash-{\sc 3pl.ind}').
+
+This approach results in a combined training set of 5916 {\sc 3pl.ind} forms, 555 CC, 5361 CVC. (The Webcorpus frequency dictionary has 6423 {\sc 3pl.ind} forms with a token frequency of 10 or higher. There are 207136 verb types in the frequency dictionary in total with a token frequency of 10 or higher.)
+
+We create two test sets. Both are based on the \Sexpr{nstem} CVC/CC verbs in the sample. One set consists of the CVC forms of the {\sc 3pl.ind}. The other set consists of the CC forms.
+
+Take the example of \textipa{[h6jlik]} `bend{\sc -3sg.ind}'. We can take {\sc 3pl.ind} forms and then calculate the overall similarity of the CVC or the CC form of the verb to stable CVC and CC verbs. The CVC form of `bend{\sc -3pl.ind}' is \textipa{[h6joln6k]}. Its similarity is 0.593 to stable CVC {\sc 3pl.ind} forms (e.g.\ \textipa{[sErEpElnEk]} `act{\sc -3pl.ind}'; \textipa{[dolgozn6k]} `work{\sc -3pl.ind}') versus stable CC forms (e.g.\ \textipa{[tErmEstEnEk]} `grow{\sc -3pl.ind}'; \textipa{[h6l:6ts:6n6k]} `be audible{\sc -3pl.ind}'). The CC form is \textipa{[h6jl6n6k]}. Its similarity is to stable CVC versus CC is 0.589.
+
+The two values tilt towards the more populous stable CVC class. Overall, the similarity weight based on CVC \textipa{[h6joln6k]} is higher than the weight based on CC \textipa{[h6jl6n6k]}. If we interpret these values across all 39 verbs and compare them to the odds of the suffixed forms, we can determine which measure of similarity is a better predictor of the ratio of their CVC/CC forms.
+
+We fit the GCM using both simple edit distance and distance based on segmental similarity between the forms. We found that the former yields better predictions and report calculations based on edit distance in the paper.
+
+\paragraph{Within-paradigm predictors}
+
+We use the lemma frequency of the verb and the token frequency of the \textsc{3sg.ind} in the Webcorpus to approximate the `strength' of the stem / base form. In order to assess the strength of the inflected forms in the paradigm, we create another predictor of morphological behaviour: the {\em number of existing CVC or CC suffixed forms for each verb}. This ranges between 2 (our minimum threshold) and 12 (an attested CVC {\em and} CC form for each six suffixed form), as it provides an approximation of the diversity of the verb form's CVC/CC variability across suffixes. 
+
+\paragraph{Word-specific predictors}
+
+For each verb, we calculate syllable count by counting the vowels in the stem, that is, the {\sc 3sg.ind} minus the `-ik' suffix. We hand-annotate verbs to determine whether they are compounds and whether they are transitive or intransitive. We use the Webcorpus to determine whether the verb stem is attested in itself -- noting whether or not the verb has a free stem. Again, we define the stem as either the {\sc 3sg.ind} without the `-ik' suffix, or else, if there is a recognisable derivational suffix present (as in \textipa{[doha:\textltailn{}-z-ik]} `smoke-{\sc 3sg.ind}', from \textipa{[doha:\textltailn{}]} `tobacco'), the nominal stem preceding this suffix.
+
+\section{Modelling}
+
+We use the R statistical environment for our analysis \citep{R} and create plots using the \texttt{effects} package \citep{fox2009effect} and \texttt{ggplot} \citep{ggplot}.
+
+Twelve specific predictors are defined based on sections \ref{haromsag} and \ref{haromsag2}: {\em sonority, homorganicity, the {\sc 3pl.ind} form's similarity to stable CVC verbs, its similarity to stable CC verbs, frequency of \textsc{3sg.ind}, lemma frequency of verb, type frequency of attested C/V-initial suffixed forms, whether the form is a compound, whether a free base is attested, whether the verb is transitive, and length of base in syllables}.
+
+Our aim was to compare these predictors in a model of CVC/CC variation, effectively predicting the log odds of CVC and CC forms of the thirty-nine verbs with the five suffixes.
+
+The main problem with an exploratory study of this kind is that the factors which determine variation are correlated. For instance, the token frequency of the \textsc{3sg.ind} and the lemma frequency of the verb will be very similar across verbs (in our data, r = 0.66). 
+
+<<pca, echo=F>>=
+
+# centering
+d$log_lemma_freq = d$c.log_stemfreq
+d$log_3sgind_freq = d$c.log_ikfreq
+d$sonority = d$c.sonority
+d$polysyllabic = as.factor(ifelse(d$syl_count==1,F,T))
+
+# setting up list of predictors for a kappa
+d = d %>% rename(cvc_weight_anak = cvc_weight_anak_nof)
+d_centered = d
+d_centered$homorganic = as.numeric(d_centered$homorganic) - 0.5
+d_centered$cvc_weight_nak = d_centered$cvc_weight_nak - mean(d_centered$cvc_weight_nak)
+d_centered$cvc_weight_anak = d_centered$cvc_weight_anak - mean(d_centered$cvc_weight_anak)
+d_centered$n_q_types = d_centered$n_q_types - median(d_centered$n_q_types)
+d_centered$compound = d_centered$compound - 0.5
+d_centered$free.stem = d_centered$free.stem - 0.5
+d_centered$syl_count = d_centered$syl_count - median(d_centered$syl_count)
+
+big.fit <- glmer(cbind(v_freq, nv_freq) ~ 
+    sonority + 
+    homorganic + 
+    cvc_weight_nak + 
+    cvc_weight_anak + 
+    log_3sgind_freq + 
+    log_lemma_freq + 
+    n_q_types + 
+    compound + 
+    free.stem + 
+    intransitive + 
+    syl_count + (1 | stem) + (1 | exponent), data=d_centered, family="binomial"(link=logit), control=glmerControl(optimizer="bobyqa"))
+
+# function by Austin Frank.
+
+kappa.mer <- function (fit,
+                       scale = TRUE, center = FALSE,
+                       add.intercept = TRUE,
+                       exact = FALSE) {
+    X <- fit@pp$X
+    nam <- names(fixef(fit))
+    
+    ## exclude intercepts
+    nrp <- sum(1 * (nam == "(Intercept)"))
+    if (nrp > 0) {
+        X <- X[, -(1:nrp), drop = FALSE]
+        nam <- nam[-(1:nrp)]
+    }
+
+    if (add.intercept) {
+        X <- cbind(rep(1), scale(X, scale = scale, center = center))
+        kappa(X, exact = exact)
+    } else {
+        kappa(scale(X, scale = scale, center = scale), exact = exact)
+    }
+}
+
+
+@
+
+
+
+
+To assess the extent of multicollinearity across predictors, we fit a mixed-effects logistic regression model predicting the odds ratio of CVC/CC, using all the predictors defined in Section 3, centralised, with the addition of a stem and a suffix random intercept, using the {\sc lme4} package in R \citep{lme4}. The kappa coefficient of this model is \Sexpr{round(kappa.mer(big.fit),2)}, which indicates moderate collinearity between predictors (see \citealt{baayen2008analyzing}). 
+
+
+
+This means that we cannot immediately co-opt the method used by \cite{janda2010capturing} and test predictor strength in a generalised linear mixed-effects model. While mixed-effects models are robust at handling nested data with predictor collinearity \citep{gelman2007data,jaeger2008categorical},  correlations across predictors can undermine modelling assumptions when such a diverse set of predictors is used. While top-down stepwise model selection would allow us to remove collinear variables, this method is criticised for either amplifying variation or, worse, generating significant trends out of noise (see \citealt{flom2007stopping}).
+
+In order to further justify the choice of predictor variables in our final model, we fit a regression tree with random effects on the data, with all our predictors, using the \texttt{REEMtree} package \citep{sela2011reemtree}. \texttt{REEMtree} fits a large number of regression trees on the data using various combinations of the predictor variables. We can extract the importance of the predictor variables across these iterations to gain a sense of how robust they are in predicting the outcome. We fit the model with the twelve predictors, along with a verb form and a suffix random intercept, using one hundred thousand iterations. 
+
+<<regtree, eval=F, echo=F>>=
+mytree1 <- REEMtree(log_odds ~ 
+    sonority + 
+    homorganic + 
+    cvc_weight_nak + 
+    cvc_weight_anak + 
+    log_3sgind_freq + 
+    log_lemma_freq + 
+    n_q_types + 
+    compound + 
+    free.stem + 
+    intransitive + 
+    syl_count,
+  random = c( ~ 1 | stem, ~ 1|exponent),
+              data = d, # centering the data makes little difference
+              MaxIterations=100000)
+
+varimp = mytree1$Tree$variable.importance
+pdf('varimp.pdf', width = 5, height = 4)
+par(mai=c(1.02,1.82,0.82,0.42))
+barplot(sort(varimp), horiz=T, las=2,
+        xlab="Variable Importance")
+par(mai=c(1.02,0.82,0.82,0.42))
+dev.off()
+@
+
+\begin{figure}[htbp]
+\begin{center}
+\includegraphics[width=0.8\textwidth]{varimp.pdf}
+\caption{Variable importance in the regression trees}
+\label{varimp_plot}
+\end{center}
+\end{figure}
+
+Figure \ref{varimp_plot} shows the most important predictor variables across all iterations. The most important predictor is the across-paradigm similarity of the verb's CVC {\sc 3pl.ind} form to stable CVC or CC verbs ({\em cvc\_weight\_nak}). This is the \textipa{[a:r6moln6k]} form in Table \ref{analogy_table}. It is followed by the token frequency of the {\sc 3sg.ind} ({\em log\_3sgind\_freq}), the similarity of the verb's CC {\sc 3pl.ind} form to stable CVC or CC verbs (the \textipa{[a:r6ml6n6k]} form in Table \ref{analogy_table}) ({\em cvc\_weight\_anak}), and the verb's lemma frequency ({\em log\_lemma\_freq}). The relevance of the remaining the predictors is diminished: the number of quasi-analytic suffix types attested ({\em n\_q\_types}), the verb's syllable count ({\em syl\_count}), whether the verb is intransitive, the sonority of the consonant cluster, and whether the verb is a compound appear to not contribute much. Whether the verb has a free stem and whether the consonant cluster is homorganic have very little relevance.
+
+We next fit a second mixed-effects logistic regression model on the dataset. The model predicts the log odds ratio of the CVC over the CC variant of the suffixed forms. Again, the counts of these variants are not independent -- they are grouped under both the \Sexpr{nstem} verb stems and the 5 suffixes. The model accounts for the lack of independence by containing a random intercept for verb and for suffix. This approach largely follows \cite{janda2010capturing}.
+
+
+In selecting the predictors for this model, we relied on variable importance in the regression trees to build a model bottom-up, starting with the most important variable, and adding subsequent ones.
+
+Model selection was informed by goodness of fit and the conceptual framework of the study. To select for goodness of fit we relied on the variance inflation factor, the Akaike Information Criterion, and model comparison using ANOVA in model selection. We included relevant random slopes in the final model. In terms of the conceptual framework our aim was to investigate {\em phonotactic}, {\em across-}, and {\em within-paradigm}, and {\em word-specific} attractors in determining CVC/CC variation. To consider these attractor types in a unified framework, we chose the most relevant predictor from each category to include in our model, irrespective of its stand-alone robustness. 
+
+This means that some of the predictors explain little variation in the data, but such a non-parsimonious model is not problematic given that the collinearity issues have been addressed.
+
+
+<<bestmodel, echo=F, warnings = F, messages = F>>=
+
+fit.c = glmer(cbind(v_freq, nv_freq) ~ 
+    cvc_weight_nak +
+    # cvc_weight_anak +
+    log_3sgind_freq +
+    polysyllabic +
+    sonority +
+    # n_q_types +
+    # free.stem +
+    # c.log_stemfreq +
+    # homorganic +
+    (1 | stem) + (cvc_weight_nak + polysyllabic + c.sonority | exponent), data=d_centered, family="binomial"(link=logit), control=glmerControl(optimizer="bobyqa"))
+
+fit = glmer(cbind(v_freq, nv_freq) ~ 
+    cvc_weight_nak +
+    # cvc_weight_anak +
+    log_3sgind_freq +
+    polysyllabic +
+    sonority +
+    # n_q_types +
+    # free.stem +
+    # c.log_stemfreq +
+    # homorganic +
+    (1 | stem) + (cvc_weight_nak + polysyllabic + c.sonority | exponent), data=d, family="binomial"(link=logit), control=glmerControl(optimizer="bobyqa"))
+
+d$pred = predict(fit, type = 'response')
+d$v_over_all = d$v_freq / (d$v_freq + d$nv_freq)
+
+# ranef(fit)[[2]]
+# str(cor.test(d$pred, d$v_over_all))
+# pearson_cor = cor.test(d$pred, d$v_over_all, paired )$estimate
+r_squareds = MuMIn::r.squaredGLMM(fit)
+# as.numeric(r_squareds[1])
+@
+
+\section{Results}
+
+Our final model predicts CVC/CC variation based on four predictors. These are the across-paradigm similarity of the verb's CVC {\sc 3pl.ind} form to stable CVC or CC verbs; the token frequency of the {\sc 3sg.ind}; whether the verb stem is mono- or pollysyllabic; and the sonority slope of the consonant cluster. This model captures the relative importance of our attractor groups: phonotactic, across-paradigm, within-paradigm, and word-specific attractors. Not all of these are robust predictors of CVC/CC variation.
+
+
+
+The marginal $r^2$ of the model is \Sexpr{round(as.numeric(r_squareds[1]),2)}, the conditional $r^2$ is \Sexpr{round(as.numeric(r_squareds[2]),2)} (following \citealt{nakagawa2013general}). The kappa coefficient of this model with all predictors centered is \Sexpr{round(kappa.mer(fit.c),2)}, a considerable improvement on the model with all predictors (\Sexpr{round(kappa.mer(big.fit),2)}).
+
+The fixed effect estimates of the model can be seen in Table \ref{modelresults}. Given the exploratory character of the analysis, we do not calculate {\em p} values for the estimates. It is, however, clear that the explanatory power of the predictors varies greatly.
+
+
+
+<<modeltable, echo=F, results=tex>>=
+print(xtable(summary(fit)$coef[,-4],caption = 'Estimated effects and standard errors, logistic model', label = 'modelresults'))
+@
+
+
+
+The model intercept is not very meaningful in and of itself -- it describes a word with a raw frequency of 1, for instance. Across-paradigm similarity ({\em cvc\_weight\_nak}) and word length (whether the word is mono- or {\em polysyllabic}) are robust predictors of CVC/CC variation, whereas phonotactics, specifically {\em sonority}, and the logged frequency of the {\sc 3sg.ind} ({\em log\_3sgind\_freq}) are not very relevant. A number of predictors are missing from the model. These either raise collinearity issues, have low explanatory value (as shown by the regression tree analysis), or are conceptually less interesting. For example, whether the word is a {\em compound} is a word-specific predictor of variable behaviour. As such, it is strongly correlated with and is far less relevant than word length.  
+
+
+
+\subsection{Relevance of predictor groups}
+
+Using groupings outlined in sections \ref{haromsag} and \ref{haromsag2}, we now look at each predictor in the regression model.
+
+\paragraph{Phonotactic predictors}
+
+<<phonotactic_pred, echo=F, eval=F>>=
+
+pdf('sonority_1.pdf', height = 4, width = 4)
+plot(effect('sonority', fit), main = 'predicted effect', ylab = 'predicted CVC/CC probability')
+dev.off()
+
+d %>% group_by(phon_stem,sonority) %>% summarise(pred = mean(pred)) %>% ggplot(aes(x = sonority, y = pred, label = phon_stem)) + geom_label() + ylab('predicted CVC/CC probability') + ggtitle('average predicted probability') + xlim(-7,5)
+ggsave('sonority_2.pdf', height = 4, width = 4, device = cairo_pdf)
+@
+
+\begin{figure}[htbp]
+\begin{center}
+\includegraphics[width=0.4\textwidth]{sonority_1}
+\includegraphics[width=0.4\textwidth]{sonority_2}
+\caption{Sonority and CVC/CC probability across stems in the model}
+\label{sonority_pred}
+\end{center}
+\end{figure}
+
+Figure \ref{sonority_pred} shows the overall effect of sonority on the probability of a CVC form (to a CC form) in the model, with estimated standard error (left) and average predictions for verb forms (right). 
+
+{\em Sonority} (x axis) has a negative relationship with the ratio of CVC versus CC forms (y axis). Sonority slopes are never drastically rising in the clusters in the sample -- sequences like [tr] or [kl] are not typical of the CVC/CC class. High values of sonority (that is, sonority difference) refer to clusters with a steeply raising sonority slope, like [tl] or [gr]. Low values of sonority refer to clusters with a less steep or a negative slope, like [ml] or [rz], respectively. These latter clusters are broken up more often.
+
+
+
+The direction of the sonority effect is contrary to our expectations outlined in Section 2: clusters of rising sonority are {\em less} likely, rather than more likely, to be broken up. At the same time, the estimate has a large amount of error, which means that in this model sonority has very little effect. We can add that the other phonotactic predictor, {\em homorganicity}, has not been pre-selected as a relevant predictor. 
+
+This indicates that the role of phonotactics in our model of CVC/CC variation is negligible. If lexical attractors operate on variable CVC/CC forms then their locus must lie elsewhere.
+
+
+
+\paragraph{Across-paradigm predictors}
+
+The predictor {\em cvc weight `nak'} in Table \ref{modelresults} is a specific measure of similarity. It expresses the distance of the {\sc 3pl.ind} form to stable CVC verbs, as compared to stable CC verbs. When it combines with CVC/CC verbs, the {\sc 3pl.ind} suffix is \textipa{[-n6k]} with CVC forms (e.g.\ \textipa{[a:r6mol-n6k]}, `flow-{\sc 3pl.ind}') and \textipa{[-6n6k]} with CC forms (e.g.\ \textipa{[a:r6ml-6n6k]}, `flow-{\sc 3pl.ind}'). We built two models of similarity, one based on the CVC form and one based on the CC form. These each provided a measure of similarity. 
+
+The measure that remains relevant in this model is the one based on the CVC rather than CC form of the CVC/CC verb: {\em cvc weight `nak'} (as opposed to {\em cvc weight `anak'}). The similarity effect is shown by Figure \ref{similarity_pred}, which displays the overall effect of similarity to stable CVC verbs -- as opposed to stable CC verbs -- on the probability of a CVC form (versus a CC form) in the model, with estimated standard error (left) and average predictions for verb forms (right). 
+
+
+The similarity effect is in line with our expectations outlined in Section 2: a variable verb's similarity to stable verb classes affects its pattern of variation.
+
+
+<<similarity_pred, echo=F, eval=F>>=
+
+pdf('similarity_1.pdf', height = 4, width = 4)
+plot(effect('cvc_weight_nak', fit), main = 'predicted effect', ylab = 'predicted CVC/CC probability')
+dev.off()
+
+d %>% group_by(phon_stem,cvc_weight_nak) %>% summarise(pred = mean(pred)) %>% ggplot(aes(x = cvc_weight_nak, y = pred, label = phon_stem)) + geom_label() + ylab('predicted CVC/CC probability') + ggtitle('average predicted cvc probability') + xlim(-0.1,1.1)
+ggsave('similarity_2.pdf', height = 4, width = 4, device = cairo_pdf)
+@
+
+\begin{figure}[htbp]
+\begin{center}
+\includegraphics[width=0.4\textwidth]{similarity_1}
+\includegraphics[width=0.4\textwidth]{similarity_2}
+\caption{Similarity and CVC/CC probability across stems in the model}
+\label{similarity_pred}
+\end{center}
+\end{figure}
+
+A variable verb's similarity to stable verb classes will affect variation. This is a robust finding of the analogical learning literature \citep{bybee1982rules,rumelhart1985learning,skousen1989analogical}. Our result corroborates this. It is noteworthy that the variable process in this case is essentially low-level allomorph selection resulting in a CVC or CC form. Similarity has been highlighted as a relevant factor in such low-level processes, as in Dutch linking vowels \citep{krott2001analogy} or English hiatus resolution \citep{soskuthy2013analogy}.
+
+At the same time, the analogical learning literature generally posits the base form as the target of analogical processes. The base form, the \textsc{3sg.ind}, of CVC/CC verbs has a V-initial suffix \textipa{[-ik]}, and, as a consequence, is almost always CC. (Only six stems in our sample are attested with a CVC \textsc{3sg.ind}, all with low token frequency.) It is the various other C-initial suffixes that result in a CVC form. In our model of similarity, the CVC form is a better target than the CC form -- this strongly suggests that similarity operates across {\em a range of inflected forms}.
+
+<<ratio3pldecl, echo=F>>=
+plur_ratio <- d %>% filter(exponent == '[nAk]') %>% summarise(cvc = sum(v_freq), cc = sum(nv_freq)) %>% mutate(ratio = cvc/cc) %>% select(ratio) %>% pull
+plur_ratio <- round(plur_ratio,2)
+
+all_ratio <- d %>% summarise(cvc = sum(v_freq), cc = sum(nv_freq)) %>% mutate(ratio = cvc/cc) %>% select(ratio) %>% pull
+all_ratio <- round(all_ratio,2)
+@
+
+
+This, in turn, indicates that some inflected forms are available in the mental lexicon, and exert an influence on variable behaviour in verbal inflection (see \citealt{stemberger1986frequency,alegre1999rule,lindsay2012acquiring}). 
+
+In terms of attractor biases, the model suggests that patterns of similarity across verbs are important in predicting CVC/CC variation, whereas more general phonotactic patterns are not. While general phonotactics and word similarity are not statistically independent, the model supports the importance of the latter over the former.
+
+\paragraph{Within-paradigm predictors}
+
+<<frequency_pred, echo=F, eval=F>>=
+
+pdf('frequency_1.pdf', height = 4, width = 4)
+plot(effect('log_3sgind_freq', fit), main = 'predicted effect', ylab = 'predicted CVC/CC probability')
+dev.off()
+
+d %>% group_by(phon_stem,log_3sgind_freq) %>% summarise(pred = mean(pred)) %>% ggplot(aes(x = log_3sgind_freq, y = pred, label = phon_stem)) + geom_label() + ylab('predicted CVC/CC probability') + ggtitle('average predicted cvc probability') + xlim(-5,5)
+ggsave('frequency_2.pdf', height = 4, width = 4, device = cairo_pdf)
+@
+
+\begin{figure}[htbp]
+\begin{center}
+\includegraphics[width=0.4\textwidth]{frequency_1}
+\includegraphics[width=0.4\textwidth]{frequency_2}
+\caption{Token frequency of the {\sc 3sg.ind} and CVC/CC probability across stems in the model}
+\label{frequency_pred}
+\end{center}
+\end{figure}
+
+
+
+Figure \ref{frequency_pred} shows that there is a negative relationship between the frequency of the {\sc 3sg.ind} form and the verb's CVC/CC ratio. This result is in line with the expectations in Section 2: more frequent verbs are more likely to be realised with CC variants. However, the error of the estimate is very large, which indicates that token frequency has negligible influence on CVC/CC variation.
+
+
+
+The lemma frequency of the verb and the type frequency of suffixed variants are not pre-selected as relevant predictors in the model.
+
+The lack of a type frequency effect indicates that the overall similarity of a form to stable CVC versus CC verbs in the lexical space is more relevant than type frequencies of its suffixed variants in determining variable behaviour. 
+
+The lack of a token frequency effect runs counter to our expectation that high token frequency forms to resist a shift to a majority pattern. This frequency effect is well documented for a wide range of types of morphological variation (see \citealt{bybee1995regular}). However, there is no obvious majority pattern within the set of CVC/CC verbs: across-paradigm similarity to stable verb classes is far more important than patterns of behaviour within the set. The lack of a clear majority pattern is an important aspect of this morphological variation, one that we return to in the discussion.
+
+\paragraph{Word-specific predictors}
+
+<<length_pred, echo=F, eval=F>>=
+
+pdf('length_1.pdf', height = 4, width = 4)
+plot(effect('polysyllabic', fit), main = 'predicted effect', ylab = 'predicted CVC/CC probability')
+dev.off()
+
+d %>% group_by(phon_stem,polysyllabic) %>% summarise(pred = mean(pred)) %>% ggplot(aes(x = polysyllabic, y = pred, label = phon_stem)) + geom_label() + ylab('predicted CVC/CC probability') + ggtitle('average predicted cvc probability')
+ggsave('length_2.pdf', height = 4, width = 4, device = cairo_pdf)
+@
+
+\begin{figure}[htbp]
+\begin{center}
+\includegraphics[width=0.4\textwidth]{length_1}
+\includegraphics[width=0.4\textwidth]{length_2}
+\caption{Stem length and CVC/CC probability across stems in the model}
+\label{length_pred}
+\end{center}
+\end{figure}
+
+
+
+Verbs with longer stems prefer the CVC variant (Figure \ref{length_pred}). (This result is the reverse of our expectation in Section 2.) This pattern indicates that longer forms tend to be even longer, contrary to broad correlations between length and frequency that also hold in Hungarian \citep{zipf1935psycho,nemeth2002multilingual}. 
+
+A possible explanation of the positive effect of length is that the CVC variant preserves the lexically specified vowel in the cluster, and, as a consequence, the stem remains easier to identify. Identifiability is more important for verbs with a lower token frequency that are harder to activate in the first place. Alternatively, we see here a masked effect of morphology -- longer verbs are more likely to have stems that occur across the paradigm and, as a result, are more robustly represented. At the same time, other word-specific predictors (e.g., whether or not the verb is a compound, or whether it has a free stem) do not contribute meaningfully to the model.
+
+
+
+\subsection{Implications for lexical attractors}
+
+Our aim was to describe a set of variable verbs in Hungarian and identify a very wide range of possible lexical attractors that can influence variation, ranging from very general ones -- such as phonotactic patterns -- to very narrow ones -- such as the verb's paradigm or word-specific information. We used algorithmic learning, cluster analysis and regression modelling to identify strong trends in our sample within this range of complex and collinear attractors. 
+
+Results indicate that variation is governed by word-specific and across-verb attractors. Polysyllabic verb stems are more likely to have CVC variants over CC variants than monosyllabic ones in the sample. Variable verbs that are similar to stable CVC verbs are more likely to behave like stable CVC verbs. The basis for this similarity is, at least partially, the set of inflected forms.
+
+We need to be mindful of existing caveats. 
+
+One issue is the model's operationalisation: Online language use, though less formal than writing and a rich data source, is not a stand-in for the ambient language. Our restrictions result in a principled dataset, but are the results of a series of analytical decisions. The way we operationalise lexical attractors follows the pre-existing psycholinguistics and corpus linguistics literature, but remains highly subjective. Our similarity-based model, in particular, makes strong assumptions on lexical relations. 
+
+
+
+The other issue is the model's interpretation: the attractor types we discuss do not constitute disjunct sets. For example, it is trivially true that the {\em across-paradigm} similarity of forms will be affected by general phonotactics, since all forms conform to the phonotactics of the language. As a consequence, when we argue that the phonotactics have a negligible effect on variation, this should be interpreted in relation to the other factors we consider, such as similarity of form. 
+
+
+
+
+Still, our model presents a quantitative operationalisation of a complex problem in morphophonological variation, provides data from a non-Indo-European language, and offers insights into the mechanics of lexical variation. We have shown that, in our Hungarian data, similarity across verbs is more important in shaping CVC/CC variation than either broad phonotactic patterns or effects of the verb's frequency.
+
+\section{Discussion}
+
+We use concatenative terminology to describe CVC/CC variation in Hungarian inflectional morphology. A concatenative model has tremendous difficulties describing wider chunks of Hungarian morphology \citep{rebrus2011paradigmatic,racz2012variation}. However, it supplies a convenient metaphor to provide a simple description of CVC/CC variation. This metaphor has been well-used by linguists working with morphology since at least the time of \cite{bloomfield1926set}.
+
+However, the corpus-based model proposed in this paper is not compatible with a genuine concatenation approach. The model indicates the presence of lexical attractors underlying variation. These attractors range from very broad ones, such as stochastic phonotactic patterns in the language, to more specific ones, such as the inflection behaviour of similar verbs.
+
+
+
+The results have clear consequences for the description of the mental lexicon. The behaviour of variable CVC/CC verbs cannot be specified by rote, nor can it be accounted for using abstract generalisations. Instead, CVC/CC verbs point towards the relevance of the relationships between individual forms stored in the lexicon.
+
+
+
+Hungarian inflectional variation, then, is compatible with a theory of morphology that posits a rich storage of forms, with connections between these forms \citep{bybee1985morphology,blevins2006word}. Such a theory must emphasise relationships between and within paradigms, driven by analogy and similarity \citep{milin2009simultaneous,dawdy2014learnability}.  In this respect, our work shows close parallels with similar research on languages with rich inflectional paradigms, such as Finnish \citep{kidd2011investigating}, Serbian \citep{mirkovic2011rules}, or Polish \citep{dkabrowska2008effects}.
+
+The results lend themselves to four primary conclusions. First, they give credit to a corpus-based heuristic which can be used to model community-level variation. Second, they provide additional support for a rich memory model of the mental lexicon. Third, they allow us to speculate on the amount of information available in the mental lexicon, a question subject to widespread debate (see e.g.\ \citealt{bresnan2007predicting}). Fourth, they inform our understanding of morphological variation in Hungarian.
+
+In our model, the phonological shape of the word form, along with patterns of similarity across words in the lexicon, influences variation. These aspects appear to be stronger than simple measures of the word's frequency or its base form.
+
+Our model set sheds light on specific aspects of CVC/CC variation. CVC/CC variation is unlike cases of morphological variation in which a majority productive pattern competes with multiple minority patterns. This variation is not productive, so it is predominantly affected by broader attractors (word shape and similarity to stable lexical classes) rather than competition across forms in its own class. This means that this exploratory analysis allows us to make predictions for types of variation in the future: while productive patterns will be affected by frequency, stable patterns will be shaped primarily by similarity.
+
+These results can only be generalised to a limited extent. For instance, an entirely tree-based clustering analysis would have attributed more importance to form frequency. What they allow us to do, however, is generate hypotheses on the structure and influence of lexical structure on variation. These hypotheses can, in turn, lead to stronger assumptions in the design and analysis of subsequent corpus studies and psycholinguistics experiments.
+
+\bibliographystyle{unified}
+\bibliography{rrt_lit}
+
+\newpage
+
+\section*{Appendix}
+
+The list of stems in the data in {\sc 3sg.indef} is, in orthographic form, contained in Table \ref{appendixtable1}. We consider both the CVC and the CC forms of the {\sc 3sg.indef} -- here, only the CC form is printed. Table \ref{appendixtable2} lists, for each form, the most frequent CVC form in the corpus. Table \ref{appendixtable3} lists, for each form, the most frequent CC form in the corpus.
+
+A note on the orthography: \'a:\textipa{[a:]}, \'e:\textipa{[e:]}, a:\textipa{[6]}, e:\textipa{[E]}, \"o:\textipa{[\o{}]}, \"u:\textipa{[y]}, sz:\textipa{[s]}, s:\textipa{[S]}, zs:\textipa{[Z]}, ny:\textipa{[\textltailn]}
+
+<<appendixcode, echo=F>>=
+appendixtable1a <- d %>% group_by(ik,ikfreq) %>% summarise(cvc_freq_total = sum(v_freq), cc_freq_total = sum(nv_freq)) %>% mutate(cvc_cc_odds = (cvc_freq_total+1)/(cc_freq_total)+1) %>% rename(form_3sg = ik) %>% arrange(-cvc_cc_odds)
+
+appendixtable1b <- d %>% arrange(ik,-v_freq) %>% select(ik,v_form,v_freq,exponent) %>% filter(!duplicated(ik)) %>% mutate(gloss_suffix = recode(exponent, '[nAk]' = '3pl.ind', '[tAk]' = '3pl.past', '[nA]' = '1sg.cond', '[tOk]' = '2pl.ind', '[ni]' = 'inf')) %>% select(-exponent) %>% rename(best_cvc_form = v_form, freq_cvc_form = v_freq, form_3sg = ik)
+
+appendixtable1c <- d %>% arrange(ik,-nv_freq) %>% select(ik,nv_form,nv_freq,exponent) %>% filter(!duplicated(ik)) %>% mutate(gloss_suffix = recode(exponent, '[nAk]' = '3pl.ind', '[tAk]' = '3pl.past', '[nA]' = '1sg.cond', '[tOk]' = '2pl.ind', '[ni]' = 'inf')) %>% select(-exponent) %>% rename(best_cc_form = nv_form, freq_cc_form = nv_freq, form_3sg = ik)
+
+appendixtable1d <- d %>% select(ik) %>% rename(form_3sg = ik) %>% arrange(form_3sg) %>% unique
+gloss_stem <- c('flow','decompose','toddle','burgeon','stink','perish','smoke','be voiced','peel','tooth','choke','bend','die','sound','be missing','wave','light up','fog','breathe','get goosebumps','collapse','pour','decompose','occur','surge','mate','efflux','swarm','degrade','rally','voice','tantrum','shine','jump','bleed','storm','lighten','bloom','relate')
+appendixtable1d <- cbind(appendixtable1d,gloss_stem)
+
+appendixtable1 <- merge(appendixtable1a,appendixtable1d) %>% arrange(form_3sg)
+appendixtable2 <- merge(appendixtable1b,appendixtable1d) %>% arrange(form_3sg)
+appendixtable3 <- merge(appendixtable1c,appendixtable1d) %>% arrange(form_3sg)
+@
+
+\begin{table}[htbp]
+<<appendixtable1, echo=F, results=tex>>=
+print(xtable(appendixtable1), include.rownames=F, floating=F)
+@
+\caption{List of verbs. `Form 3sg' is the {\sc 3sg.ind} form, `ikfreq' is the frequency of the {\sc 3sg.ind}, `cvc freq total' is the summed frequency of CVC forms, `cc freq total' is the summed frequency of CC forms, `cvc cc odds' is the odds ratio, `gloss stem' is the gloss of the stem.}
+\label{appendixtable1}
+\end{table}
+
+\begin{table}[htbp]
+<<appendixtable1, echo=F, results=tex>>=
+print(xtable(appendixtable2), include.rownames=F, floating=F)
+@
+\caption{List of verbs with most frequent CVC form. `Form 3sg' is the {\sc 3sg.ind} form, `best cvc form' is the most frequent CVC form of the verb, `freq cvc form' is the frequency of this specific form, `gloss suffix' is the gloss of the suffix, `gloss stem' is the gloss of the stem.}
+\label{appendixtable2}
+\end{table}
+
+\begin{table}[htbp]
+<<appendixtable1, echo=F, results=tex>>=
+print(xtable(appendixtable3), include.rownames=F, floating=F)
+@
+\caption{List of verbs with most frequent CC form. `Form 3sg' is the {\sc 3sg.ind} form, `best cc form' is the most frequent CC form of the verb, `freq cc form' is the frequency of this specific form, `gloss suffix' is the gloss of the suffix, `gloss stem' is the gloss of the stem.}
+\label{appendixtable3}
+\end{table}
+
+
+\end{document}

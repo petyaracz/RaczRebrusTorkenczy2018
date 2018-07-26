@@ -1,0 +1,434 @@
+We set up data for our paper. We start with
+
+- list of epenthetic stems. 111 verbs.
+- 6 suffixes. 
+
+We search the Hungarian Webcorpus using the web interface.
+
+We exclude a set of verbs:
+
+- excluded: defective verbs (18 verbs)
+- excluded: ambiguous verbs
+- excluded: forms tagged as nouns by the parser (4 forms (_not_ verbs))
+- excluded: WITHOUT at least 1 v form AND 1 nv form
+
+We created log odds pairs of v and nv forms.
+
+We created a set of predictor tags.
+
+```{r }
+try(setwd("/Users/pracz/Work/Bristol/RaczRebrusTorkenczy2018/"))
+
+library(stringr)
+library(stringi)
+library(reshape2)
+library(plyr)
+library(knitr)
+library(dplyr)
+library(knitr)
+# library(arm) # dplyr clashes with arm somehow
+
+# vowelharmony functions
+VHround <- function(x){
+  y <- ifelse(
+    grepl('[öü].$', d$v_base),
+      gsub('O', 'ö', x),
+        x
+  )
+  y <- ifelse(
+    grepl('e.$', d$v_base),
+      gsub('O', 'e', y),
+      gsub('O', 'o', y)
+  )
+return(y)
+}
+
+VHfront <- function(x){ x <- ifelse(
+  grepl('[aou].$', d$v_base),
+    gsub('A','a', x),
+      gsub('A','e', x)
+)
+return(x)
+}
+```
+
+## 1. Take list of stems, list of suffixes, create query list
+
+```{r }
+# take list of stems
+d <- read.delim('initial_stem_list.txt', header=F) 
+d <- as.character(d$V1)
+d <- sub('h.t$','', d)
+
+# remove defective stems (hanyatlik, csuklik)
+# d[c(17,18,19,23,27,28,32,33,36,40,53,59,70,84,94,96,97,98)]
+
+d <- d[-c(17,18,19,23,27,28,32,33,36,40,53,59,70,84,94,96,97,98)]
+
+# take list of suffixes
+suffixes <- read.delim('initial_suffix_list.txt', sep=',')
+
+# generate all possible forms
+d <- merge(d,suffixes)
+names(d)[1] <- 'v_base'
+d$nv_base <- sub('.(.)$','\\1', d$v_base) 
+
+d$stem <- sub('.$', '', d$nv_base)
+
+d <- d[order(d$stem),c(6,2,1,5,3,4)]
+d %>% head(12) %>% kable
+
+d$v_form <- paste(d$v_base,d$v_suffix, sep='')
+d$v_form <- VHround(d$v_form)
+d$v_form <- VHfront(d$v_form)
+
+d$nv_form <- paste(d$nv_base,d$nv_suffix, sep='')
+d$nv_form <- VHround(d$nv_form)
+d$nv_form <- VHfront(d$nv_form)
+
+d$exponent <- paste("[", d$v_suffix, "]", sep='')
+
+ql <- c(d$v_form,d$nv_form)
+
+# list of forms for query
+# ql %>% head
+
+write.csv(ql, 'initial_query_list.txt', row.names=F)
+
+# list of forms to pair up stems with returns from query
+d %>% select(stem, v_form, nv_form) %>% melt(id.vars = 'stem', value.name='word') %>% select(stem,word) -> d2
+
+# list of pairs to long list
+d3a <- d[,c('stem','category','exponent','v_base','v_suffix','v_form')]
+d3b <- d[,c('stem','category','exponent','nv_base','nv_suffix','nv_form')]
+
+# cvc form or cc form
+d3a$type <- 'v'
+d3b$type <- 'nv'
+
+# rename them
+names(d3a) <- c('stem','category','exponent','base','suffix','word','type')
+names(d3b) <- c('stem','category','exponent','base','suffix','word','type')
+
+# make it long
+d3 <- rbind(d3a,d3b)
+
+# we don't want "ik", that's not a target set, it's a reference set
+d3 <- droplevels( subset( d3, suffix != 'ik'))
+# 93 stems, 2 * 5 Q forms per stem
+```
+
+Now we have 93 stems (111-18 defective stems). 
+
+## 2. query forms on szoszablya web bulk search
+
+We go to szotar.mokk.bme.hu/szoszablya/searchq.php and bulk search the forms.
+
+```{r }
+hits <- read.delim('webcorpus_query_results.txt', sep=';')
+hits %>% head %>% kable
+```
+
+## 3. filter query for morphological analysis
+
+```{r }
+# get morphological parser tags
+
+hits %>% group_by(analysis) %>% summarise(no_rows = length(analysis)) %>% arrange(no_rows) -> label_list
+# eyeballing ensues
+
+# pick the rare ones, since -- ideally -- we would see at least 93 of each tag if one tag covered one type of suffix (which it doesn't). this is because each Q suffix exists in at least CC form -- and we have 93 stems (sort of)
+label_list %>% filter(no_rows < 10) -> suspicious_labels_list
+kable(suspicious_labels_list)
+
+# let's look at the forms themselves
+hits %>% filter(analysis %in% suspicious_labels_list$analysis) -> suspicious_hits
+# eyeballing ensues
+kable(suspicious_hits)
+
+# elhangzottak is out
+hits %>% filter(!(word %in% c("elhangzottak"))) %>% droplevels() -> hits
+
+# whatever this is is out
+hits %>% filter(!(analysis %in% c("NOUN<POSS<2>><CAS<DAT>>","NOUN<PLUR>"))) %>% droplevels -> hits
+
+# also this is utf 8 should be utf 16 but this is what is affected by the wrong coding
+hits$word <- gsub('û', 'ű', hits$word)
+hits$word <- gsub('õ','ő', hits$word)
+hits$word <- tolower(hits$word)
+
+# get hits with frequency (this is what's relevant)
+hits %>% select(word, freq) -> hits1
+
+# get lemmafreqs for each word
+hits %>% select(word, lemmafreq) -> hits2
+hits2$word <- as.character(hits2$word)
+d2$word <- as.character(d2$word)
+
+# we need to figure out the overall frequency of each stem. this is the sum of the unique lemma frequencies for the words that belong to the stem. you might want to read this line again.
+
+# gather lemma freqs for stem
+merge(hits2,d2, all = T) -> lemmaFreq 
+# if a form is unattested, it's freq is zero.
+lemmaFreq[is.na(lemmaFreq$lemmafreq),]$lemmafreq <- 0
+# we need the stems and the various relevant lemma freqs
+lemmaFreq %>% select(stem, lemmafreq) -> lemmaFreq
+# we need to order this so we can sort it (I guess)
+lemmaFreq[order(lemmaFreq$lemmafreq),] -> lemmaFreq
+# for each stem
+stemFreq <- ddply(lemmaFreq, "stem", function(x) {
+# get unique values (those belong to the various lemmata assigned to this stem)
+  unique <- unique(x$lemmafreq)
+# sum these values  
+  sumfreq <- sum(unique)
+})
+
+# name it stem freq
+names(stemFreq)[2] <- 'stemfreq'
+
+# we need the frequency of the -ik forms for each stem as well. pick forms
+d %>% filter(v_suffix=='ik') %>% select(nv_form) -> ikforms
+# pick freq for these forms from hit
+hits1 %>% filter(word %in% ikforms$nv_form) %>% droplevels -> ikFreq
+# get the biggest frequency (I'm lazy)
+ikFreq[ order( ikFreq$word, -ikFreq$freq ), ] -> ikFreq
+ikFreq %>% filter(!duplicated(word)) -> ikFreq
+names(ikFreq) <- c('ik','ikfreq')
+# pair up stems with ik forms
+d %>% filter(nv_suffix=='ik') %>% select(stem,nv_form) -> stemIk
+names(stemIk) <- c('stem','ik')
+# pair up stems, ik forms, ik freq, stem freq
+ikFreq <- merge(ikFreq,stemIk, all = T)
+stems <- merge(ikFreq,stemFreq, all = T)
+
+# add freqs to forms. get forms that are not 'ik'
+hits3 <- hits1[!(grepl('ik$', hits1$word)),]
+# pair em up with the long format target set
+forms <- merge(d3, hits3, all = T)
+# if it's not there its freq is zero
+forms[is.na(forms$freq),]$freq <- 0
+
+# i'ma save this
+forms2 <- merge(forms, stems)
+# write.csv(forms2, file='formatted_hits_long_current.csv', row.names = F)
+```
+
+## 4. make odds pairs
+
+```{r }
+# make odds pairs. make sure it's one pair per suffix (no "dohanyzhat" etc)
+
+# these stems are beyond saving
+forms %>% filter(!(stem %in% c("ér","fej","por","szag"))) -> forms
+
+# get two types of forms
+forms_a <- droplevels( subset( forms, type == 'v'))
+forms_b <- droplevels( subset( forms, type == 'nv'))
+
+# something ain't right. it should be same number of rows.
+
+forms_a %>% mutate(index = paste(stem, exponent)) %>% arrange(index) %>% mutate(dupl = duplicated(index)) -> forms_a
+forms_b %>% mutate(index = paste(stem, exponent)) %>% arrange(index) %>% mutate(dupl = duplicated(index)) -> forms_b
+
+# some entries are repeated
+forms_a %>% select(dupl) %>% summary
+forms_b %>% select(dupl) %>% summary
+
+# tOk and tAk merge in front stems. 
+forms_a %>% filter(dupl==T) %>% kable
+# I have a siking feeling it's all past pl tAk
+forms_a %>% filter(dupl==T) %>% select(word) -> duplwords
+hits %>% filter(word %in% duplwords$word) %>% select(word,analysis) %>% kable
+# yup, they are -- at least according to the tagger -- with the exception of szagoltak. i'm removing it above from forms
+# so within the duplicating subset of forms_a, the tOk forms are ghosts
+forms_a %>% filter(dupl==F | exponent=='[tAk]') -> forms_a
+
+# some OttAk forms appear twice. 
+forms_b %>% filter(dupl==T) %>% kable
+# I pick the one with a higher freq
+forms_b %>% arrange(-freq) %>% filter(dupl==F) -> forms_b
+# well forms_a still has two more forms than forms_b. will check that later*
+
+# don't need these no more
+forms_a$type <- NULL
+forms_b$type <- NULL
+forms_a$dupl <- NULL
+forms_b$dupl <- NULL
+
+names(forms_a) <- c("v_form","stem","category","exponent","v_base","v_suffix","v_freq","index")
+names(forms_b) <- c("nv_form","stem","category","exponent","nv_base","nv_suffix","nv_freq","index")
+
+pairs <- merge(forms_a, forms_b)
+
+# something's off again. too many rows
+
+pairs %>% mutate(dupl = duplicated(index)) -> pairs
+pairs %>% filter(dupl==T) %>% select(index) -> duplforms
+pairs %>% filter(index %in% duplforms$index) %>% kable
+# right. i'll pick the more frequent forms.
+pairs %>% arrange(-nv_freq) %>% filter(!duplicated(index)) -> pairs
+
+# at least this line works fine
+pairs <- merge(pairs, stems)
+```
+
+## Remove outliers (with 0 of either CVC or CC forms)
+
+```{r }
+var_counts <- ddply(pairs, 'stem', summarise, sum_v = sum(v_freq), sum_nv = sum(nv_freq))
+var_counts$outlier <- ifelse(var_counts$sum_v < 1 | var_counts$sum_nv < 1, T, F)
+var_counts %>% filter(outlier==F) %>% select(stem) -> var_stems
+# var_counts %>% mutate(sum_all = sum_v + sum_nv) -> var_counts
+# d %>% group_by(stem) %>% filter(v_freq > 0 | nv_freq > 0) %>% ddply(.(stem), n_q_types = nrow) -> d2
+# d2 <- droplevels( subset(d, d$stem %in% var_stems$stem))
+pairs %>% filter(stem %in% var_stems$stem) -> pairs
+```
+
+## 5. Add summary stats
+
+```{r }
+pairs$odds <- ( pairs$v_freq + 1 ) / ( pairs$nv_freq + 1) # Harald Baayen does it so it's fine
+pairs$log_odds <- log(pairs$odds)
+
+pairs$form_freq <- pairs$v_freq + pairs$nv_freq
+pairs$log_form_freq <- log(pairs$form_freq + 1)
+
+pairs$log_ikfreq <- log(pairs$ikfreq)
+pairs$log_stemfreq <- log(pairs$stemfreq)
+
+pairs <- pairs %>% group_by(ik) %>% mutate(stem_nv_freq = sum(nv_freq), stem_v_freq = sum(v_freq), stem_odds = (stem_v_freq + 1 ) / ( stem_nv_freq + 1), log_stem_odds = log(stem_odds))
+
+
+plot(density(pairs$log_odds, bw = 0.4), xlim = c(-10,10), main = 'log odds for forms, all forms')
+abline(v = 2.5*mad(pairs$log_odds), col = 'red', lty = 2)
+abline(v = -2.5*mad(pairs$log_odds), col = 'red', lty = 2)
+# the distribution is far less horrible in the first place, since it only contains -- more or less -- varying suffixes
+
+# we either remove STEMS based on SUMMED log odds outside 2.5 median absolute deviation
+# (this removes two forms)
+# -- or, rather, flag stems WITH such forms
+
+# flag outlier pairs
+pairs$outlier_form <- ifelse(pairs$log_odds > 2.5*mad(pairs$log_odds) | pairs$log_odds < -2.5*mad(pairs$log_odds), T, F)
+# flag stems with outlier pairs
+pairs %>% group_by(stem) %>% summarise(outlier_forms = sum(outlier_form)) -> thing
+thing$outlier_stem <- ifelse(thing$outlier_forms > 0, T, F)
+thing %>% select(stem, outlier_stem) -> thing
+
+pairs <- merge(pairs, thing)
+
+plot(density(pairs[pairs$outlier_stem==F,]$log_odds, bw=0.4), xlim=c(-10,10), main='log odds for forms, without outliers')
+abline(v = 2.5*mad(pairs$log_odds), col = 'red', lty = 2)
+abline(v = -2.5*mad(pairs$log_odds), col = 'red', lty = 2)
+
+# Now we create various metrics of number of Q suffixed forms/ frequency of ~ etc
+
+# stem freq - ik freq
+
+pairs$diff_freq <- pairs$stemfreq - pairs$ikfreq
+pairs$log_diff_freq <- log(pairs$diff_freq)
+
+# number of existing q forms
+
+pairs %>% group_by(stem) %>% filter(v_freq > 0) %>% summarise(n_cvc_q_types = n()) -> var_sums1
+pairs %>% group_by(stem) %>% filter(nv_freq > 0) %>% summarise(n_cc_q_types = n()) -> var_sums2
+var_sums <- merge(var_sums1,var_sums2)
+var_sums %>% mutate(n_q_types = n_cvc_q_types + n_cc_q_types) %>% select(stem,n_q_types) -> var_sums
+pairs <- merge(pairs,var_sums, all=T)
+
+# and some extra formatting.
+
+# consonant cluster
+pairs$cluster <- str_match(pairs$nv_base, "[aáeéiíoóöőuúüű].{2,3}$")
+pairs$cluster <- sub('^.','', pairs$cluster)
+
+pairs$cluster <- sub('^ng','g', pairs$cluster)
+pairs$C1 <- substr(pairs$cluster, 1, nchar(pairs$cluster)-1)
+pairs$C2 <- substr(pairs$cluster, nchar(pairs$cluster), nchar(pairs$cluster))
+
+# features
+labial <- c('p','b','m','f','v')
+coronal <- c('t','d','n','j','l','r','sz','z')
+palatal <- c('ty','gy','ny','s','zs')
+velar <- c('k','g','h')
+
+stop <- c('p','b','t','d','ty','gy','k','g')
+fricative <- c('f','v','sz','z','s','zs','h')
+nasal <- c('m','n','ny')
+
+voiced <- c('b','d','gy','g','v','z','zs')
+voiceless <- c('p','t','ty','k','f','sz','s')
+
+# is cluster homorganic?
+
+pairs$homorganic <- ifelse(
+  pairs$C1 %in% labial & pairs$C2 %in% labial |
+    pairs$C1 %in% coronal & pairs$C2 %in% coronal |
+      pairs$C1 %in% palatal & pairs$C2 %in% palatal |
+        pairs$C1 %in% velar & pairs$C2 %in% velar,
+  T,
+  F
+) # this is how you don't code, kids
+
+# View(unique(pairs[,c('C1','C2','homorganic')]))
+
+# sonority scale
+doSonority <- function(x){
+x <- gsub("(j|ly)", 1, x)
+x <- gsub("(r)", 2, x)
+x <- gsub("(l)", 3, x)
+x <- gsub("(m|n|ny)", 4, x)
+x <- gsub("zs", 5, x)
+x <- gsub("sz", 6, x)
+x <- gsub("(v|z)", 5, x)
+x <- gsub("(f|s)", 6, x)
+x <- gsub("(b|d|g|gy)", 7, x)
+x <- gsub("(p|t|k|ty)", 8, x)
+return(x)
+}
+
+pairs$C1son <- doSonority(pairs$C1)
+pairs$C2son <- doSonority(pairs$C2)
+# hist(as.numeric(pairs$C1son))
+# hist(as.numeric(pairs$C2son))
+pairs$sonority <- as.numeric(pairs$C2son) - as.numeric(pairs$C1son)
+pairs$syl_count <- str_count(pairs$stem, '[aáeéiíoóöőuúüű]')
+```
+
+We pull in the list of stems from Rebrus. These are annotated by him -- a Hungarian linguist. He also removed a number of forms. 
+
+```{r }
+rebrus <- read.delim('epenthetic-ik-verbs-features.csv', sep=',')
+names(rebrus)[names(rebrus)=='lemma'] <- 'ik'
+rebrus %>% select(ik,compound,free.stem,intransitive) -> rebrus
+pairs <- merge(pairs,rebrus)
+```
+
+Rebrus excluded:
+
+- feneklik (cf. fenekel)
+- habzik (cf. haboz)
+- nyálzik (cf. nyálaz)
+- sugárzik (cf. sugároz)
+- torlik (cf. torol)
+- vedlik (cf. vedel)
+
+We add glosses and phonetic transcription for plots.
+
+```{r }
+stem_matcher <- pairs %>% select(ik) %>% unique
+
+gloss_stem <- c('flow','decompose','toddle','burgeon','stink','perish','smoke','be voiced','peel','tooth','choke','bend','die','sound','be missing','wave','light up','fog','breathe','get goosebumps','collapse','pour','decompose','occur','surge','mate','efflux','swarm','degrade','rally','voice','tantrum','shine','jump','bleed','storm','lighten','bloom','relate')
+phon_stem <- c("aːrɒmlik", "bomlik", "botlik", "burjaːnzik", "byːzlik", "døglik", "dohaːɲzik", "ɛlhɒngzik", "fɛʃlik", "fogzik", "fuldoklik", "hɒjlik", "hɒldoklik", "hɒngzik", "hiaːɲzik", "hullaːmzik", "kivilaːglik", "kødlik", "leːlɛgzik", "lúdbøːrzik", "omlik", "ømlik", "oslik", "øtlik", "øzønlik", "paːrzik", "pɒtɒkzik", "rɒjzik", "romlik", "ʃɛrɛglik", "soːlɒmlik", "tɒjteːkzik", "tyndøklik", "ugrik", "veːrzik", "vihɒrzik", "vilaːglik", "viraːgzik", "visoɲlik")
+
+stem_matcher <- cbind(stem_matcher,gloss_stem,phon_stem)
+
+pairs <- merge(pairs,stem_matcher)
+
+```
+
+```{r }
+# ...profit
+
+write.csv(pairs, file='formatted_filtered_hits_pairs_current.txt', row.names = F)
+```
