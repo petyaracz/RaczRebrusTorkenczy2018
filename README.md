@@ -7,3 +7,5 @@
 - attractors_of_variation_helper.Rmd helper file to create dataset
 - magyar.Rfnc helper function to encode Hungarian orthography into shabby sampa
 - attractors_of_variation_gcm.Rmd gcm code
+
+[![DOI](https://zenodo.org/badge/142496271.svg)](https://zenodo.org/badge/latestdoi/142496271)
